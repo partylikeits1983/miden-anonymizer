@@ -42,7 +42,7 @@ async fn alice_sends_to_bob_via_pta() -> Result<()> {
         alice.id(),
         pta_account.id(),
         bob.id(),
-        asset,
+        vec![asset],
         NoteAttachment::default(),
         &mut rng,
     )?;
@@ -59,6 +59,25 @@ async fn alice_sends_to_bob_via_pta() -> Result<()> {
         .build()?
         .execute()
         .await?;
+
+    // Cycle-count baseline for later PTA / P2IDF optimization work.
+    let measurements = executed_forward.measurements();
+    let p2idf_cycles = measurements
+        .note_execution
+        .iter()
+        .find(|(id, _)| *id == p2idf.id())
+        .map(|(_, c)| *c)
+        .expect("P2IDF note measurement missing");
+    println!("=== PTA single-hop cycle counts ===");
+    println!("  total:            {}", measurements.total_cycles());
+    println!("  trace_length:     {}", measurements.trace_length());
+    println!("  prologue:         {}", measurements.prologue);
+    println!("  notes_processing: {}", measurements.notes_processing);
+    println!("  tx_script:        {}", measurements.tx_script_processing);
+    println!("  epilogue:         {}", measurements.epilogue);
+    println!("  auth_procedure:   {}", measurements.auth_procedure);
+    println!("  P2IDF note:       {}", p2idf_cycles);
+
     chain.add_pending_executed_transaction(&executed_forward)?;
     chain.prove_next_block()?;
 
@@ -81,6 +100,74 @@ async fn alice_sends_to_bob_via_pta() -> Result<()> {
         outbound.metadata().sender(),
         pta_account.id(),
         "outbound note sender must be the PTA, not Alice"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn alice_sends_multiple_assets_to_bob_via_pta() -> Result<()> {
+    let mut builder = MockChain::builder();
+
+    let bob = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let pta_account = PassThroughAccount::build_existing([7u8; 32])?;
+    builder.add_account(pta_account.clone())?;
+
+    // Two distinct faucets so we can carry two assets in the same note
+    // (NoteAssets rejects duplicate fungible assets from the same faucet).
+    let faucet_a = builder.create_new_faucet(Auth::IncrNonce, "FOO", 1_000_000)?;
+    let faucet_b = builder.create_new_faucet(Auth::IncrNonce, "BAR", 1_000_000)?;
+    let asset_a: Asset = FungibleAsset::new(faucet_a.id(), ASSET_AMOUNT)?.into();
+    let asset_b: Asset = FungibleAsset::new(faucet_b.id(), ASSET_AMOUNT * 2)?.into();
+
+    let alice = builder.add_existing_wallet_with_assets(Auth::IncrNonce, [asset_a, asset_b])?;
+
+    let mut rng = RandomCoin::new(Word::default());
+    let p2idf = P2idForwardNote::create(
+        alice.id(),
+        pta_account.id(),
+        bob.id(),
+        vec![asset_a, asset_b],
+        NoteAttachment::default(),
+        &mut rng,
+    )?;
+
+    builder.add_output_note(RawOutputNote::Full(p2idf.clone()));
+
+    let mut chain = builder.build()?;
+
+    let executed_forward = chain
+        .build_tx_context(pta_account.id(), &[p2idf.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+
+    chain.add_pending_executed_transaction(&executed_forward)?;
+    chain.prove_next_block()?;
+
+    let pta_state = chain.committed_account(pta_account.id())?;
+    assert!(
+        pta_state.vault().is_empty(),
+        "PTA vault must be empty after forwarding multiple assets"
+    );
+
+    let output_notes = executed_forward.output_notes();
+    assert_eq!(
+        output_notes.num_notes(),
+        1,
+        "PTA must emit exactly one outbound note even when forwarding multiple assets"
+    );
+    let outbound = output_notes.iter().next().expect("one output note").clone();
+    assert_eq!(
+        outbound.metadata().sender(),
+        pta_account.id(),
+        "outbound note sender must be the PTA"
+    );
+    assert_eq!(
+        outbound.assets().num_assets(),
+        2,
+        "outbound note must carry both forwarded assets"
     );
 
     Ok(())

@@ -42,10 +42,14 @@ impl Default for VaultEmptyAuth {
 
 impl From<VaultEmptyAuth> for AccountComponent {
     fn from(_: VaultEmptyAuth) -> Self {
-        AccountComponent::new(pta_auth_library(), vec![], VaultEmptyAuth::component_metadata())
-            .expect(
-                "VaultEmptyAuth component should satisfy the requirements of a valid account \
+        AccountComponent::new(
+            pta_auth_library(),
+            vec![],
+            VaultEmptyAuth::component_metadata(),
+        )
+        .expect(
+            "VaultEmptyAuth component should satisfy the requirements of a valid account \
                  component",
-            )
+        )
     }
 }

@@ -86,7 +86,9 @@ fn compile_standards_lib(
     if !target_dir.exists() {
         fs::create_dir_all(target_dir).unwrap();
     }
-    let output_file = target_dir.join("standards").with_extension(Library::LIBRARY_EXTENSION);
+    let output_file = target_dir
+        .join("standards")
+        .with_extension(Library::LIBRARY_EXTENSION);
     lib.write_to_file(output_file).into_diagnostic()?;
 
     Ok(Arc::unwrap_or_clone(lib))
@@ -112,8 +114,8 @@ fn compile_account_components(
             .expect("file stem should be valid UTF-8")
             .to_owned();
 
-        let component_source_code = fs::read_to_string(&masm_file_path)
-            .expect("reading component MASM should succeed");
+        let component_source_code =
+            fs::read_to_string(&masm_file_path).expect("reading component MASM should succeed");
 
         // Derive the namespaced library path from the directory layout.
         // e.g. auth/vault_empty.masm -> miden::pta::components::auth::vault_empty
@@ -144,9 +146,12 @@ fn compile_account_components(
             fs::create_dir_all(&output_dir).unwrap();
         }
 
-        let component_file_path =
-            output_dir.join(component_name).with_extension(Library::LIBRARY_EXTENSION);
-        component_library.write_to_file(component_file_path).into_diagnostic()?;
+        let component_file_path = output_dir
+            .join(component_name)
+            .with_extension(Library::LIBRARY_EXTENSION);
+        component_library
+            .write_to_file(component_file_path)
+            .into_diagnostic()?;
     }
 
     Ok(())

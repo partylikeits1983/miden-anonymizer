@@ -18,100 +18,148 @@ const OUTBOUND_RECIPIENT_PTR=0
 const OUTBOUND_NOTE_TYPE_PTR=4
 const OUTBOUND_NOTE_TAG_PTR=5
 
-# Room for one asset (ASSET_KEY + ASSET_VALUE = 8 felts) starting at this offset.
+# Region where the input note's assets are loaded by `active_note::get_assets`.
+# Word-aligned; each asset occupies ASSET_SIZE = 8 felts (ASSET_KEY + ASSET_VALUE).
 const ASSET_PTR=16
+const ASSET_SIZE=8
+
+# Local memory slots used by `main`. See `@locals(2)` below.
+const NOTE_IDX_LOC=0
+const I_LOC=1
 
 # ERRORS
 # =================================================================================================
 
 const ERR_P2IDF_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2IDF script expects exactly 6 note storage items"
 
-const ERR_P2IDF_WRONG_NUMBER_OF_ASSETS="P2IDF script requires exactly 1 note asset"
+const ERR_P2IDF_NO_ASSETS="P2IDF script requires at least 1 note asset"
 
 # PROCEDURES
 # =================================================================================================
 
-#! Pay-to-ID-Forward: consumed by a pass-through account, forwards the input
-#! note's single asset to a precomputed P2ID recipient digest stored in the
-#! P2IDF note's storage.
+#! Pay-to-ID-Forward: consumed by a pass-through account, forwards all of
+#! the input note's assets to a precomputed P2ID recipient digest stored
+#! in the P2IDF note's storage.
 #!
 #! Flow:
-#!   1. Drain the input note's asset into the PTA vault (via BasicWallet's
-#!      `receive_asset`).
-#!   2. Create a new output note using the precomputed P2ID recipient.
-#!   3. Move the asset from the PTA vault into that output note (via
-#!      BasicWallet's `move_asset_to_note`).
+#!   1. Create the outbound P2ID note using the precomputed recipient.
+#!   2. For each asset in the input note:
+#!        a. Drain the asset into the PTA vault (BasicWallet::receive_asset).
+#!        b. Move the asset from the PTA vault into the outbound note
+#!           (BasicWallet::move_asset_to_note).
 #!
-#! Net effect on the PTA's vault: zero.
+#! Net effect on the PTA's vault: zero (receive is always paired with a move).
 #!
 #! Inputs:  [ARGS]
 #! Outputs: []
 @note_script
+@locals(2)
 pub proc main
-    # drop note args
+    # drop the 4 note args; the VM pads back up to the min stack depth of 16
     dropw
-    # => []
+    # => [pad(16)]
 
-    # --- verify storage length ------------------------------------------------
+    # --- verify storage length --------------------------------------------
 
     push.STORAGE_PTR exec.active_note::get_storage
-    # => [num_storage_items, storage_ptr]
+    # => [num_storage_items, storage_ptr, pad(16)]
 
     eq.P2IDF_NUM_STORAGE_ITEMS assert.err=ERR_P2IDF_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     drop
-    # => []
+    # => [pad(16)]
 
-    # --- verify exactly one asset in the input note --------------------------
+    # --- load input-note assets into memory and assert at least 1 ---------
+    # get_assets returns [num_assets, dest_ptr] — num_assets is on top, so
+    # we `swap drop` to discard the pointer and keep num_assets.
 
     push.ASSET_PTR exec.active_note::get_assets
-    # => [num_assets, asset_ptr]
+    # => [num_assets, asset_ptr, pad(16)]
 
-    eq.1 assert.err=ERR_P2IDF_WRONG_NUMBER_OF_ASSETS
-    drop
-    # => []
+    swap drop
+    # => [num_assets, pad(16)]
 
-    # --- drain the input note's single asset into the PTA vault -------------
-    # receive_asset ABI: [ASSET_KEY, ASSET_VALUE, pad(8)] -> [pad(16)]
+    dup neq.0 assert.err=ERR_P2IDF_NO_ASSETS
+    # => [num_assets, pad(16)]
 
-    padw padw
-    # => [pad(8)]
-
-    push.ASSET_PTR exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
-
-    call.wallet::receive_asset
-    # => [pad(16)]
-
-    dropw dropw dropw dropw
-    # => []
-
-    # --- create the outbound P2ID note using the precomputed recipient ------
-    # output_note::create ABI: [tag, note_type, RECIPIENT] -> [note_idx]
+    # --- create the outbound P2ID note using the precomputed recipient ----
+    # output_note::create expects [tag, note_type, RECIPIENT] on top of the
+    # stack and leaves [note_idx]. Created once before the loop so the
+    # resulting note_idx can be reused by every iteration's move.
 
     padw mem_loadw_le.OUTBOUND_RECIPIENT_PTR
-    # => [RECIPIENT]
+    # => [RECIPIENT, num_assets, pad(16)]
 
     mem_load.OUTBOUND_NOTE_TYPE_PTR
-    # => [note_type, RECIPIENT]
+    # => [note_type, RECIPIENT, num_assets, pad(16)]
 
     mem_load.OUTBOUND_NOTE_TAG_PTR
-    # => [tag, note_type, RECIPIENT]
+    # => [tag, note_type, RECIPIENT, num_assets, pad(16)]
 
     exec.output_note::create
-    # => [note_idx]
+    # => [note_idx, num_assets, pad(16)]
 
-    # --- move the asset from the PTA vault into the outbound note -----------
-    # move_asset_to_note ABI: [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)] -> [pad(16)]
+    loc_store.NOTE_IDX_LOC
+    # => [num_assets, pad(16)]
 
-    padw push.0.0.0 movup.7
-    # => [note_idx, pad(7)]
+    # --- loop i from num_assets down to 1: receive + move each asset ------
 
-    push.ASSET_PTR exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    dup neq.0
+    # => [latch, i, pad(16)]
 
-    call.wallet::move_asset_to_note
+    while.true
+        # => [i, pad(16)]
+
+        # save i so it survives both call boundaries below
+        loc_store.I_LOC
+        # => [pad(16)]
+
+        # compute asset_i_ptr = ASSET_PTR + (i-1) * ASSET_SIZE, load asset
+        loc_load.I_LOC sub.1 mul.ASSET_SIZE add.ASSET_PTR
+        # => [asset_i_ptr, pad(16)]
+
+        exec.asset::load
+        # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+
+        # wallet::receive_asset expects [ASSET_KEY, ASSET_VALUE, pad(8)] as
+        # its top-16 call frame and leaves [pad(16)]. The 8 zeros that sat
+        # below position 16 here are preserved by the `call`, so the output
+        # pad grows from 16 to 24.
+        call.wallet::receive_asset
+        # => [pad(24)]
+
+        dropw dropw
+        # => [pad(16)]
+
+        # reload the asset from memory for the subsequent move
+        loc_load.I_LOC sub.1 mul.ASSET_SIZE add.ASSET_PTR
+        # => [asset_i_ptr, pad(16)]
+
+        exec.asset::load
+        # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+
+        # slot note_idx into position 8; `movdn.8` shifts it past ASSET_VALUE
+        # so the top-16 frame becomes [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        loc_load.NOTE_IDX_LOC movdn.8
+        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(16)]
+
+        # wallet::move_asset_to_note expects [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        # as its top-16 frame and leaves [pad(16)]. 9 zeros stay below position 16,
+        # so the output pad grows from 16 to 25.
+        call.wallet::move_asset_to_note
+        # => [pad(25)]
+
+        dropw dropw drop
+        # => [pad(16)]
+
+        # decrement i and rebuild the loop latch
+        loc_load.I_LOC sub.1
+        # => [i-1, pad(16)]
+
+        dup neq.0
+        # => [latch, i-1, pad(16)]
+    end
+    # => [0, pad(16)]
+
+    drop
     # => [pad(16)]
-
-    dropw dropw dropw dropw
-    # => []
 end

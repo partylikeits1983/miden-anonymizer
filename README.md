@@ -57,7 +57,8 @@ miden-anonymizer/
 
 - Single deployed PTA account, public storage, immutable code.
 - Components: `VaultEmptyAuth` + `BasicWallet`.
-- P2IDF notes carry **exactly one asset** (matches SWAP semantics).
+- P2IDF notes can carry **up to `MAX_ASSETS_PER_NOTE` (= 64) assets**, all
+  forwarded together through the PTA into a single outbound P2ID note.
 - No retry logic, no sharding, no denomination whitelist, no network txs.
 
 ## v1 known limitations

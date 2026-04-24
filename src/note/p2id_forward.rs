@@ -1,4 +1,3 @@
-use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
@@ -6,15 +5,8 @@ use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteAttachment, NoteMetadata, NoteRecipient, NoteScript, NoteStorage,
+    NoteTag, NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -43,10 +35,10 @@ static P2IDF_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// Pay-to-ID-Forward note: addressed to a PTA, carries a precomputed P2ID
 /// recipient digest for the final recipient (Bob) in its storage. When
 /// consumed by the PTA, the note script:
-/// - drains the asset into the PTA's vault,
 /// - creates a new output note using the precomputed recipient (a standard
 ///   P2ID note to Bob), and
-/// - moves the asset from the PTA vault into that outbound note.
+/// - for each asset in the input note, drains it into the PTA's vault and
+///   immediately moves it into the outbound note.
 ///
 /// Because the recipient digest is the hash of `(serial_num, script, storage)`,
 /// storing only the digest means Bob's account id does not appear in plaintext
@@ -72,7 +64,9 @@ impl P2idForwardNote {
     /// - `alice` is the sender of the P2IDF note (recorded in its metadata).
     /// - `pta` is the pass-through account that will consume this note.
     /// - `bob` is the ultimate recipient of the forwarded payment.
-    /// - `asset` is the single asset being forwarded.
+    /// - `assets` are the assets being forwarded. Must be non-empty and
+    ///   satisfy `NoteAssets`'s constraints (at most `MAX_ASSETS_PER_NOTE`,
+    ///   no duplicates from the same faucet).
     /// - `rng` draws two independent serial numbers — one for the inbound
     ///   P2IDF note and one for the outbound P2ID-to-Bob note. Both are
     ///   committed to by hashes, so an observer cannot link Alice to Bob via
@@ -81,7 +75,7 @@ impl P2idForwardNote {
         alice: AccountId,
         pta: AccountId,
         bob: AccountId,
-        asset: Asset,
+        assets: Vec<Asset>,
         attachment: NoteAttachment,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
@@ -108,7 +102,7 @@ impl P2idForwardNote {
         let metadata = NoteMetadata::new(alice, NoteType::Private)
             .with_tag(NoteTag::with_account_target(pta))
             .with_attachment(attachment);
-        let vault = NoteAssets::new(vec![asset])?;
+        let vault = NoteAssets::new(assets)?;
 
         Ok(Note::new(vault, metadata, recipient))
     }
@@ -139,7 +133,11 @@ impl P2idForwardNoteStorage {
 
     /// Consumes the storage and returns the corresponding [`NoteRecipient`].
     pub fn into_recipient(self, inbound_serial: Word) -> NoteRecipient {
-        NoteRecipient::new(inbound_serial, P2idForwardNote::script(), NoteStorage::from(self))
+        NoteRecipient::new(
+            inbound_serial,
+            P2idForwardNote::script(),
+            NoteStorage::from(self),
+        )
     }
 }
 
@@ -168,10 +166,16 @@ impl TryFrom<&[Felt]> for P2idForwardNoteStorage {
             1 => NoteType::Public,
             2 => NoteType::Private,
             _ => {
-                return Err(NoteError::other("invalid outbound note type in P2IDF storage"));
-            },
+                return Err(NoteError::other(
+                    "invalid outbound note type in P2IDF storage",
+                ));
+            }
         };
         let outbound_tag = NoteTag::from(items[5].as_canonical_u64() as u32);
-        Ok(Self { outbound_recipient_digest, outbound_note_type, outbound_tag })
+        Ok(Self {
+            outbound_recipient_digest,
+            outbound_note_type,
+            outbound_tag,
+        })
     }
 }
