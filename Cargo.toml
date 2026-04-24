@@ -13,14 +13,30 @@ license      = "MIT"
 default = ["std"]
 std     = ["miden-protocol/std", "miden-standards/std", "miden-assembly/std"]
 testing = ["dep:rand", "miden-protocol/testing", "miden-standards/testing"]
+# Enables the bundled CLI surface (PTA deploy / use binaries) which depends on
+# `miden-client` and friends. Off by default so library consumers aren't
+# forced to pull in the full client stack.
+cli     = [
+    "std",
+    "dep:anyhow",
+    "dep:miden-client",
+    "dep:miden-client-sqlite-store",
+    "dep:rand",
+    "dep:tokio",
+]
 
 [dependencies]
-miden-assembly  = { version = "0.22",   default-features = false }
-miden-processor = { version = "0.22",   default-features = false }
-miden-protocol  = { version = "0.14.5", default-features = false }
-miden-standards = { version = "0.14.5", default-features = false }
-rand            = { version = "0.9", optional = true, default-features = false }
-thiserror       = { version = "2.0", default-features = false }
+miden-assembly            = { version = "0.22",   default-features = false }
+miden-processor           = { version = "0.22",   default-features = false }
+miden-protocol            = { version = "0.14.5", default-features = false }
+miden-standards           = { version = "0.14.5", default-features = false }
+rand                      = { version = "0.9", optional = true, default-features = false }
+thiserror                 = { version = "2.0", default-features = false }
+# CLI-only dependencies (only pulled in via the `cli` feature).
+anyhow                    = { version = "1", optional = true }
+miden-client              = { version = "0.14", optional = true, features = ["tonic"] }
+miden-client-sqlite-store = { version = "0.14", optional = true }
+tokio                     = { version = "1.48", optional = true, features = ["rt-multi-thread", "macros", "time"] }
 
 [build-dependencies]
 fs-err          = "3"
@@ -32,7 +48,7 @@ walkdir         = "2.5"
 
 [dev-dependencies]
 anyhow                   = "1"
-miden-anonymizer         = { path = ".", features = ["testing"] }
+miden-anonymizer         = { path = ".", features = ["testing", "cli"] }
 miden-client             = { version = "0.14", features = ["testing", "tonic"] }
 miden-client-sqlite-store = { version = "0.14" }
 miden-protocol           = { version = "0.14.5", features = ["testing"] }
@@ -44,3 +60,13 @@ tokio                    = { version = "1.48", features = ["rt-multi-thread", "m
 [[example]]
 name = "pta_single_hop_demo"
 path = "examples/pta_single_hop_demo.rs"
+
+[[bin]]
+name              = "deploy_pta"
+path              = "src/bin/deploy_pta.rs"
+required-features = ["cli"]
+
+[[bin]]
+name              = "use_pta"
+path              = "src/bin/use_pta.rs"
+required-features = ["cli"]

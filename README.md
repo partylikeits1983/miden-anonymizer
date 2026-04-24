@@ -22,6 +22,24 @@ On-chain an observer sees two independent flows: _someone_ sent to PTA; _PTA_
 sent to Bob. The inbound note is private (only its nullifier is posted) and the
 outbound note's `sender` is the PTA, not Alice.
 
+### Flow
+
+```mermaid
+flowchart LR
+    A([Alice]) -- "Tx1: create" --> N1[/"P2IDF note<br/>sender: Alice<br/>target: PTA<br/>hides: P2ID-to-Bob digest"/]
+    N1 -- "Tx2: consume" --> P([PTA])
+    P -- "Tx2: emit" --> N2[/"P2ID note<br/>sender: PTA<br/>target: Bob"/]
+    N2 -- "Tx3: consume" --> B([Bob])
+```
+
+- **Tx1** is signed by Alice. It drains Alice's vault into the P2IDF note.
+- **Tx2** is signed by the PTA (no signature actually required — `VaultEmptyAuth`
+  is a pure assertion). It consumes the P2IDF and, in the same transaction,
+  emits the P2ID note to Bob. Asset transit through the PTA's vault is
+  net-zero, enforced by the start/end vault-empty checks.
+- **Tx3** is signed by Bob whenever he chooses to redeem. The note's `sender`
+  field reads `PTA`, never `Alice`.
+
 ## Layout
 
 ```
@@ -72,12 +90,37 @@ miden-anonymizer/
 - **Anonymity set** = senders routing through the PTA in the same time
   window. Small by default; grows with adoption.
 
-## Build
+## Deployed public PTA (Miden testnet)
+
+A public, immutable-code PTA is live on Miden testnet:
+
+- **bech32**: `mtst1azy607tkxe7fyqq604l2ysp55qqs2whr`
+- **explorer**: <https://testnet.midenscan.com/account/mtst1azy607tkxe7fyqq604l2ysp55qqs2whr>
+- **deploy tx** (the first P2IDF forward — that's how the PTA got committed
+  to chain): <https://testnet.midenscan.com/tx/0xdead6a5083f94f63542fd3ca432579bffbb650c98afe53507747c78778de7c83>
+
+Because the PTA's auth (`VaultEmptyAuth`) requires no signature, *any* fresh
+client can submit a transaction against it — no shared keys, no shared store,
+nothing out-of-band beyond the public bech32 above. See `src/bin/use_pta.rs`
+for a working example, and `tests/testnet.rs::any_client_can_use_public_pta`
+for the same flow as a `#[ignore]` integration test.
+
+## Build & run
 
 ```
+# library + MockChain tests
 cargo build
 cargo test
+
+# deploy a fresh PTA on testnet (prints its bech32 + midenscan link)
+cargo run --release --features cli --bin deploy_pta
+
+# drive a P2IDF forward against the already-deployed public PTA above
+cargo run --release --features cli --bin use_pta
+# or, against a different PTA:
+cargo run --release --features cli --bin use_pta -- <pta-bech32>
 ```
 
-This expects `../miden-base` to be checked out at
-`/Users/riemann/Desktop/miden/miden-base`.
+The CLI binaries pull in `miden-client`; they're gated behind the `cli`
+feature so library consumers that only want the PTA primitives don't pay the
+cost of the full client stack.

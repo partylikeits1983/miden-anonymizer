@@ -9,10 +9,20 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use miden_anonymizer::cli::{
+    bech32_testnet, build_testnet_client, create_faucet, create_wallet, forward_through_pta,
+    midenscan_account_url, midenscan_tx_url, mint_and_consume,
+};
+use miden_client::account::AccountId;
+use miden_client::asset::FungibleAsset;
 use miden_client::builder::ClientBuilder;
 use miden_client::keystore::FilesystemKeyStore;
 use miden_client::rpc::{Endpoint, GrpcClient};
 use miden_client_sqlite_store::ClientBuilderSqliteExt;
+
+/// The public PTA on Miden testnet that this test exercises. Keep in sync
+/// with the README and `src/bin/use_pta.rs`.
+const PUBLIC_PTA_BECH32: &str = "mtst1azy607tkxe7fyqq604l2ysp55qqs2whr";
 
 /// Scratch directory that is cleaned up on drop so the sqlite store + keystore
 /// from a previous run cannot poison the next one.
@@ -99,4 +109,62 @@ async fn pta_single_hop_on_testnet() {
     // live testnet node. See `examples/pta_single_hop_demo.rs` for the
     // scaffolding of the client/keystore/account-deployment surface.
     todo!("flesh out single-hop testnet flow");
+}
+
+/// Demonstrates the core anonymity-set property of the public PTA: *any*
+/// fresh client instance — no shared keystore, no shared sqlite store, no
+/// out-of-band setup — can drive a transaction against the deployed PTA.
+///
+/// All this client knows is the PTA's bech32 address (a pubic constant). It
+/// imports the PTA's public state via `import_account_by_id`, then runs a
+/// single P2IDF forward through it. The PTA's `VaultEmptyAuth` requires no
+/// signature, so no key material ever leaves the original deployer.
+#[tokio::test]
+#[ignore]
+async fn any_client_can_use_public_pta() -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let scratch = TempDir::new("any-client");
+    let (mut client, keystore) = build_testnet_client(&scratch.0).await?;
+    let sync = client.sync_state().await.context("initial sync_state")?;
+    println!("fresh client synced to block {}", sync.block_num);
+
+    let (_network, pta_id) =
+        AccountId::from_bech32(PUBLIC_PTA_BECH32).context("decoding PTA bech32")?;
+
+    println!("importing public PTA {} ...", PUBLIC_PTA_BECH32);
+    client.import_account_by_id(pta_id).await.context("import PTA")?;
+    let pta = client
+        .try_get_account(pta_id)
+        .await
+        .context("fetching imported PTA")?;
+    println!("  midenscan: {}", midenscan_account_url(pta.id()));
+
+    let alice = create_wallet(&mut client, &keystore).await?;
+    let bob = create_wallet(&mut client, &keystore).await?;
+    println!("alice: {}", bech32_testnet(alice.id()));
+    println!("bob:   {}", bech32_testnet(bob.id()));
+
+    let faucet = create_faucet(&mut client, &keystore, "ANY", 8, 1_000_000).await?;
+    println!("faucet: {}", bech32_testnet(faucet.id()));
+
+    let amount: u64 = 50;
+    mint_and_consume(&mut client, &faucet, &alice, amount).await?;
+
+    let asset = FungibleAsset::new(faucet.id(), amount).context("FungibleAsset::new")?;
+    let (alice_tx, pta_tx) =
+        forward_through_pta(&mut client, &alice, &pta, &bob, vec![asset.into()]).await?;
+
+    println!("alice tx: {}", midenscan_tx_url(alice_tx));
+    println!("PTA tx:   {}", midenscan_tx_url(pta_tx));
+
+    // The PTA tx committing on-chain *is* the property under test: a fresh
+    // client, with no shared state, was able to drive a transaction against
+    // the public PTA. `forward_through_pta` already waited for the PTA tx
+    // to commit, so reaching this point with `Ok(_)` is the assertion.
+    //
+    // We deliberately don't probe Bob's inbox here — the outbound note is
+    // private and propagating it to a separate client is out of scope for
+    // this test (and unrelated to the "any client" property).
+    Ok(())
 }

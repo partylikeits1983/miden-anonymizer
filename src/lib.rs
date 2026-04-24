@@ -23,4 +23,7 @@ pub mod errors;
 pub(crate) mod library;
 pub mod note;
 
+#[cfg(feature = "cli")]
+pub mod cli;
+
 pub use library::{pta_auth_library, pta_standards_lib};
