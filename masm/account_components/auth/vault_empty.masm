@@ -1,0 +1,59 @@
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::core::word
+
+# ERRORS
+# =================================================================================================
+
+const ERR_PTA_VAULT_DELTA_NONZERO="PTA vault must be unchanged between the start and end of a tx"
+
+# PROCEDURES
+# =================================================================================================
+
+#! Pass-through account auth procedure.
+#!
+#! Enforces the pass-through invariant: the PTA's vault delta is zero —
+#! whatever the vault root was at the start of the transaction, it must be
+#! the same at the end. Combined with the on-chain fact that the PTA was
+#! created with an empty vault (and no component ever writes to it except
+#! through note scripts that balance their inputs and outputs), this keeps
+#! the PTA strictly pass-through.
+#!
+#! Nonce is incremented iff account state changed OR the account is new
+#! (mirrors `no_auth.masm`).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+@auth_script
+pub proc auth_vault_empty
+    # initial_vault_root == final_vault_root
+    exec.active_account::get_initial_vault_root
+    # => [INITIAL_VAULT_ROOT, pad(16)]
+
+    exec.active_account::get_vault_root
+    # => [FINAL_VAULT_ROOT, INITIAL_VAULT_ROOT, pad(16)]
+
+    exec.word::eq assert.err=ERR_PTA_VAULT_DELTA_NONZERO
+    # => [pad(16)]
+
+    # --- increment nonce iff state changed (same semantics as no_auth) -------
+
+    exec.active_account::get_initial_commitment
+    # => [INITIAL_COMMITMENT, pad(16)]
+
+    exec.active_account::compute_commitment
+    # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT, pad(16)]
+
+    exec.word::eq not
+    # => [has_account_state_changed, pad(16)]
+
+    exec.active_account::get_nonce eq.0
+    # => [is_new_account, has_account_state_changed, pad(16)]
+
+    or
+    # => [should_increment_nonce, pad(16)]
+
+    if.true
+        exec.native_account::incr_nonce drop
+    end
+end

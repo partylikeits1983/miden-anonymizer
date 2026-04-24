@@ -1,0 +1,117 @@
+use miden::protocol::active_note
+use miden::protocol::asset
+use miden::protocol::output_note
+use miden::standards::wallets::basic->wallet
+
+# CONSTANTS
+# =================================================================================================
+
+# Storage layout (6 felts):
+#   [0..3] outbound_p2id_recipient_digest (4 felts; recipient hash of the
+#          outbound P2ID note to Bob, precomputed by the P2IDF builder)
+#   [4] outbound_note_type (1 = public, 2 = private)
+#   [5] outbound_note_tag
+const P2IDF_NUM_STORAGE_ITEMS=6
+
+const STORAGE_PTR=0
+const OUTBOUND_RECIPIENT_PTR=0
+const OUTBOUND_NOTE_TYPE_PTR=4
+const OUTBOUND_NOTE_TAG_PTR=5
+
+# Room for one asset (ASSET_KEY + ASSET_VALUE = 8 felts) starting at this offset.
+const ASSET_PTR=16
+
+# ERRORS
+# =================================================================================================
+
+const ERR_P2IDF_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2IDF script expects exactly 6 note storage items"
+
+const ERR_P2IDF_WRONG_NUMBER_OF_ASSETS="P2IDF script requires exactly 1 note asset"
+
+# PROCEDURES
+# =================================================================================================
+
+#! Pay-to-ID-Forward: consumed by a pass-through account, forwards the input
+#! note's single asset to a precomputed P2ID recipient digest stored in the
+#! P2IDF note's storage.
+#!
+#! Flow:
+#!   1. Drain the input note's asset into the PTA vault (via BasicWallet's
+#!      `receive_asset`).
+#!   2. Create a new output note using the precomputed P2ID recipient.
+#!   3. Move the asset from the PTA vault into that output note (via
+#!      BasicWallet's `move_asset_to_note`).
+#!
+#! Net effect on the PTA's vault: zero.
+#!
+#! Inputs:  [ARGS]
+#! Outputs: []
+@note_script
+pub proc main
+    # drop note args
+    dropw
+    # => []
+
+    # --- verify storage length ------------------------------------------------
+
+    push.STORAGE_PTR exec.active_note::get_storage
+    # => [num_storage_items, storage_ptr]
+
+    eq.P2IDF_NUM_STORAGE_ITEMS assert.err=ERR_P2IDF_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    drop
+    # => []
+
+    # --- verify exactly one asset in the input note --------------------------
+
+    push.ASSET_PTR exec.active_note::get_assets
+    # => [num_assets, asset_ptr]
+
+    eq.1 assert.err=ERR_P2IDF_WRONG_NUMBER_OF_ASSETS
+    drop
+    # => []
+
+    # --- drain the input note's single asset into the PTA vault -------------
+    # receive_asset ABI: [ASSET_KEY, ASSET_VALUE, pad(8)] -> [pad(16)]
+
+    padw padw
+    # => [pad(8)]
+
+    push.ASSET_PTR exec.asset::load
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
+    call.wallet::receive_asset
+    # => [pad(16)]
+
+    dropw dropw dropw dropw
+    # => []
+
+    # --- create the outbound P2ID note using the precomputed recipient ------
+    # output_note::create ABI: [tag, note_type, RECIPIENT] -> [note_idx]
+
+    padw mem_loadw_le.OUTBOUND_RECIPIENT_PTR
+    # => [RECIPIENT]
+
+    mem_load.OUTBOUND_NOTE_TYPE_PTR
+    # => [note_type, RECIPIENT]
+
+    mem_load.OUTBOUND_NOTE_TAG_PTR
+    # => [tag, note_type, RECIPIENT]
+
+    exec.output_note::create
+    # => [note_idx]
+
+    # --- move the asset from the PTA vault into the outbound note -----------
+    # move_asset_to_note ABI: [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)] -> [pad(16)]
+
+    padw push.0.0.0 movup.7
+    # => [note_idx, pad(7)]
+
+    push.ASSET_PTR exec.asset::load
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
+    call.wallet::move_asset_to_note
+    # => [pad(16)]
+
+    dropw dropw dropw dropw
+    # => []
+end
