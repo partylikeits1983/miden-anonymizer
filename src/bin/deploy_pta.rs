@@ -71,16 +71,10 @@ async fn main() -> Result<()> {
 
     // 5. Drive the forward: Alice → PTA → Bob. The PTA's tx is the deploy.
     println!("\nforwarding through PTA (this is the deploy tx)");
-    let asset = FungibleAsset::new(faucet.id(), ASSET_AMOUNT)
-        .context("constructing asset for forward")?;
-    let (alice_tx, pta_tx) = forward_through_pta(
-        &mut client,
-        &alice,
-        &pta,
-        &bob,
-        vec![asset.into()],
-    )
-    .await?;
+    let asset =
+        FungibleAsset::new(faucet.id(), ASSET_AMOUNT).context("constructing asset for forward")?;
+    let (alice_tx, pta_tx) =
+        forward_through_pta(&mut client, &alice, &pta, &bob, vec![asset.into()]).await?;
 
     println!("\n✅ PTA deployed.");
     println!("  PTA bech32:    {}", pta_bech32);

@@ -133,7 +133,10 @@ async fn any_client_can_use_public_pta() -> anyhow::Result<()> {
         AccountId::from_bech32(PUBLIC_PTA_BECH32).context("decoding PTA bech32")?;
 
     println!("importing public PTA {} ...", PUBLIC_PTA_BECH32);
-    client.import_account_by_id(pta_id).await.context("import PTA")?;
+    client
+        .import_account_by_id(pta_id)
+        .await
+        .context("import PTA")?;
     let pta = client
         .try_get_account(pta_id)
         .await

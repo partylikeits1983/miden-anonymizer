@@ -40,45 +40,6 @@ flowchart LR
 - **Tx3** is signed by Bob whenever he chooses to redeem. The note's `sender`
   field reads `PTA`, never `Alice`.
 
-## Layout
-
-```
-miden-anonymizer/
-├── Cargo.toml
-├── build.rs                          # compiles MASM to .masl
-├── masm/
-│   ├── account_components/
-│   │   └── auth/
-│   │       └── vault_empty.masm      # PTA custom auth
-│   └── standards/
-│       └── notes/
-│           └── p2id_forward.masm     # the P2IDF note script
-├── src/
-│   ├── lib.rs
-│   ├── library.rs                    # loads compiled MASM libraries
-│   ├── errors.rs
-│   ├── account/
-│   │   ├── mod.rs
-│   │   ├── auth.rs                   # VaultEmptyAuth component
-│   │   └── pta.rs                    # PassThroughAccount builder
-│   ├── note/
-│   │   ├── mod.rs
-│   │   └── p2id_forward.rs           # P2idForwardNote
-│   └── bin/
-│       └── pta_single_hop_demo.rs    # rust-client style demo
-└── tests/
-    ├── single_hop.rs
-    └── auth_invariants.rs
-```
-
-## v1 scope
-
-- Single deployed PTA account, public storage, immutable code.
-- Components: `VaultEmptyAuth` + `BasicWallet`.
-- P2IDF notes can carry **up to `MAX_ASSETS_PER_NOTE` (= 64) assets**, all
-  forwarded together through the PTA into a single outbound P2ID note.
-- No retry logic, no sharding, no denomination whitelist, no network txs.
-
 ## v1 known limitations
 
 - **Same-block contention**: two users submitting against the PTA in the same
@@ -112,15 +73,12 @@ for the same flow as a `#[ignore]` integration test.
 cargo build
 cargo test
 
+# drive a P2IDF forward against the already-deployed public PTA above
+cargo run --release --features cli --bin use_pta
+
 # deploy a fresh PTA on testnet (prints its bech32 + midenscan link)
 cargo run --release --features cli --bin deploy_pta
 
-# drive a P2IDF forward against the already-deployed public PTA above
-cargo run --release --features cli --bin use_pta
 # or, against a different PTA:
 cargo run --release --features cli --bin use_pta -- <pta-bech32>
 ```
-
-The CLI binaries pull in `miden-client`; they're gated behind the `cli`
-feature so library consumers that only want the PTA primitives don't pay the
-cost of the full client stack.

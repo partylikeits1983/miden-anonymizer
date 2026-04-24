@@ -46,8 +46,8 @@ async fn main() -> Result<()> {
         ));
     }
 
-    let (_network, pta_id) = AccountId::from_bech32(&pta_bech32)
-        .context("decoding PTA bech32 address")?;
+    let (_network, pta_id) =
+        AccountId::from_bech32(&pta_bech32).context("decoding PTA bech32 address")?;
 
     let data_dir = data_dir_from_env_or_default();
     println!("client data dir: {}", data_dir.display());
@@ -87,16 +87,10 @@ async fn main() -> Result<()> {
 
     // 4. Forward through the existing PTA.
     println!("\nforwarding through PTA");
-    let asset = FungibleAsset::new(faucet.id(), ASSET_AMOUNT)
-        .context("constructing asset for forward")?;
-    let (alice_tx, pta_tx) = forward_through_pta(
-        &mut client,
-        &alice,
-        &pta,
-        &bob,
-        vec![asset.into()],
-    )
-    .await?;
+    let asset =
+        FungibleAsset::new(faucet.id(), ASSET_AMOUNT).context("constructing asset for forward")?;
+    let (alice_tx, pta_tx) =
+        forward_through_pta(&mut client, &alice, &pta, &bob, vec![asset.into()]).await?;
 
     println!("\n✅ forwarded through public PTA.");
     println!("  PTA bech32:    {}", pta_bech32);

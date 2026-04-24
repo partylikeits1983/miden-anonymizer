@@ -20,9 +20,7 @@ use tokio::time::sleep;
 use miden_client::Client;
 use miden_client::Felt;
 use miden_client::account::component::AuthScheme;
-use miden_client::account::{
-    Account, AccountId, AccountStorageMode, AccountType, NetworkId,
-};
+use miden_client::account::{Account, AccountId, AccountStorageMode, AccountType, NetworkId};
 use miden_client::asset::{Asset, FungibleAsset, TokenSymbol};
 use miden_client::auth::AuthSecretKey;
 use miden_client::builder::ClientBuilder;
@@ -30,9 +28,7 @@ use miden_client::keystore::{FilesystemKeyStore, Keystore};
 use miden_client::note::{NoteAttachment, NoteType};
 use miden_client::rpc::{Endpoint, GrpcClient};
 use miden_client::store::TransactionFilter;
-use miden_client::transaction::{
-    TransactionId, TransactionRequestBuilder, TransactionStatus,
-};
+use miden_client::transaction::{TransactionId, TransactionRequestBuilder, TransactionStatus};
 use miden_client_sqlite_store::ClientBuilderSqliteExt;
 use miden_standards::AuthMethod;
 use miden_standards::account::faucets::create_basic_fungible_faucet;
@@ -73,9 +69,8 @@ pub async fn build_testnet_client(data_dir: &Path) -> Result<(PtaClient, Arc<Fil
     let endpoint = testnet_endpoint();
     let rpc_client = Arc::new(GrpcClient::new(&endpoint, 10_000));
 
-    let keystore = Arc::new(
-        FilesystemKeyStore::new(data_dir.join("keystore")).context("opening keystore")?,
-    );
+    let keystore =
+        Arc::new(FilesystemKeyStore::new(data_dir.join("keystore")).context("opening keystore")?);
 
     let store_path: PathBuf = data_dir.join("store.sqlite3");
     let client = ClientBuilder::new()
@@ -99,9 +94,9 @@ pub async fn wait_for_tx(client: &mut PtaClient, tx_id: TransactionId) -> Result
             .get_transactions(TransactionFilter::Ids(vec![tx_id]))
             .await
             .context("get_transactions")?;
-        let committed = txs.first().is_some_and(|t| {
-            matches!(t.status, TransactionStatus::Committed { .. })
-        });
+        let committed = txs
+            .first()
+            .is_some_and(|t| matches!(t.status, TransactionStatus::Committed { .. }));
         if committed {
             return Ok(());
         }
@@ -194,7 +189,11 @@ pub async fn mint_and_consume(
 ) -> Result<()> {
     let asset = FungibleAsset::new(faucet.id(), amount).context("FungibleAsset::new")?;
 
-    println!("  minting {amount} of {} to {} ...", faucet.id(), target.id());
+    println!(
+        "  minting {amount} of {} to {} ...",
+        faucet.id(),
+        target.id()
+    );
     let mint_request = TransactionRequestBuilder::new()
         .build_mint_fungible_asset(asset, target.id(), NoteType::Public, client.rng())
         .context("building mint request")?;
@@ -218,7 +217,10 @@ pub async fn mint_and_consume(
         notes.push(note);
     }
     if notes.is_empty() {
-        return Err(anyhow!("no consumable notes for {} after mint", target.id()));
+        return Err(anyhow!(
+            "no consumable notes for {} after mint",
+            target.id()
+        ));
     }
 
     let consume_request = TransactionRequestBuilder::new()
