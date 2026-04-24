@@ -8,11 +8,11 @@
 //! ```
 //!
 //! If the bech32 argument is omitted, falls back to the address baked into
-//! `DEFAULT_PTA_BECH32` below — keep that in sync with the README.
+//! `DEFAULT_PTA_BECH32` below - keep that in sync with the README.
 //!
 //! The point of this binary (and the matching test in `tests/testnet.rs`) is
-//! to demonstrate that *any* fresh client instance — no shared keystore, no
-//! shared sqlite store, no out-of-band setup — can submit a transaction
+//! to demonstrate that *any* fresh client instance - no shared keystore, no
+//! shared sqlite store, no out-of-band setup - can submit a transaction
 //! against the public PTA. The PTA's `VaultEmptyAuth` component requires no
 //! signature, so all the new client needs is the PTA's public state (fetched
 //! via `import_account_by_id`).
@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
         .context("fetching imported PTA from local store")?;
     println!("  imported (commitment {})", pta.to_commitment());
 
-    // 2. Fresh Alice and Bob wallets — no shared state with the PTA's
+    // 2. Fresh Alice and Bob wallets - no shared state with the PTA's
     // original deployer.
     println!("\ncreating fresh Alice and Bob wallets");
     let alice = create_wallet(&mut client, &keystore).await?;

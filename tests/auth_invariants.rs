@@ -30,5 +30,5 @@ fn pta_builder_returns_public_immutable_account() {
         "PTA should be a regular account"
     );
     // Immutable code is encoded at the account_type level; checking via
-    // to_string or bitpattern is out of scope — the builder above requested it.
+    // to_string or bitpattern is out of scope - the builder above requested it.
 }

@@ -69,7 +69,7 @@ pub proc main
     # => [pad(16)]
 
     # --- load input-note assets into memory and assert at least 1 ---------
-    # get_assets returns [num_assets, dest_ptr] — num_assets is on top, so
+    # get_assets returns [num_assets, dest_ptr] - num_assets is on top, so
     # we `swap drop` to discard the pointer and keep num_assets.
 
     push.ASSET_PTR exec.active_note::get_assets

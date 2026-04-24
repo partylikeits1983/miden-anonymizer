@@ -12,7 +12,7 @@ const ERR_PTA_VAULT_DELTA_NONZERO="PTA vault must be unchanged between the start
 
 #! Pass-through account auth procedure.
 #!
-#! Enforces the pass-through invariant: the PTA's vault delta is zero —
+#! Enforces the pass-through invariant: the PTA's vault delta is zero -
 #! whatever the vault root was at the start of the transaction, it must be
 #! the same at the end. Combined with the on-chain fact that the PTA was
 #! created with an empty vault (and no component ever writes to it except

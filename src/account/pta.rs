@@ -8,9 +8,9 @@ use crate::errors::PtaError;
 /// Builder helper for the pass-through account (PTA).
 ///
 /// The PTA is:
-/// - **Regular, immutable-code** — users need assurance that the PTA's logic
+/// - **Regular, immutable-code** - users need assurance that the PTA's logic
 ///   can never be upgraded to steal in-flight assets.
-/// - **Public storage** — state is on-chain so any user can construct a local
+/// - **Public storage** - state is on-chain so any user can construct a local
 ///   transaction consuming P2IDF notes addressed at the PTA.
 /// - **Components**: `VaultEmptyAuth` (enforces the pass-through invariant)
 ///   plus `BasicWallet` (provides `receive_asset` / `move_asset_to_note`,

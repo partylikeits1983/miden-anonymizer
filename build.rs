@@ -4,12 +4,12 @@
 //! This is a stripped-down port of `miden-base/crates/miden-standards/build.rs`.
 //! Two artifacts are produced:
 //!
-//! 1. `$OUT_DIR/assets/standards.masl` — compiled from `masm/standards/**.masm`,
+//! 1. `$OUT_DIR/assets/standards.masl` - compiled from `masm/standards/**.masm`,
 //!    namespaced under `miden::pta::standards`. This library contains the
 //!    P2IDF note script. It links against `miden::standards::notes::p2id`
 //!    and `miden::standards::wallets::basic` from miden-standards.
 //!
-//! 2. `$OUT_DIR/assets/account_components/auth/vault_empty.masl` — compiled
+//! 2. `$OUT_DIR/assets/account_components/auth/vault_empty.masl` - compiled
 //!    from `masm/account_components/auth/vault_empty.masm`, with the library
 //!    path `miden::pta::components::auth::vault_empty`.
 

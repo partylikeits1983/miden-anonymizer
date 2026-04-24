@@ -112,8 +112,8 @@ async fn pta_single_hop_on_testnet() {
 }
 
 /// Demonstrates the core anonymity-set property of the public PTA: *any*
-/// fresh client instance — no shared keystore, no shared sqlite store, no
-/// out-of-band setup — can drive a transaction against the deployed PTA.
+/// fresh client instance - no shared keystore, no shared sqlite store, no
+/// out-of-band setup - can drive a transaction against the deployed PTA.
 ///
 /// All this client knows is the PTA's bech32 address (a pubic constant). It
 /// imports the PTA's public state via `import_account_by_id`, then runs a
@@ -166,7 +166,7 @@ async fn any_client_can_use_public_pta() -> anyhow::Result<()> {
     // the public PTA. `forward_through_pta` already waited for the PTA tx
     // to commit, so reaching this point with `Ok(_)` is the assertion.
     //
-    // We deliberately don't probe Bob's inbox here — the outbound note is
+    // We deliberately don't probe Bob's inbox here - the outbound note is
     // private and propagating it to a separate client is out of scope for
     // this test (and unrelated to the "any client" property).
     Ok(())

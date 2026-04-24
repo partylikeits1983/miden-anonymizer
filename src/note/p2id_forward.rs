@@ -21,7 +21,7 @@ static P2IDF_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     // Use `from_library` (not `from_library_reference`) so the note script's
     // MAST forest contains the full library. `from_library_reference`
     // produces a minimal external-node stub, relying on the runtime to
-    // resolve the procedure via the `MastForestStore` — but the PTA's
+    // resolve the procedure via the `MastForestStore` - but the PTA's
     // library is not among the forests the transaction executor pre-loads,
     // so resolution would fail at execution time.
     let lib = pta_standards_lib();
@@ -67,7 +67,7 @@ impl P2idForwardNote {
     /// - `assets` are the assets being forwarded. Must be non-empty and
     ///   satisfy `NoteAssets`'s constraints (at most `MAX_ASSETS_PER_NOTE`,
     ///   no duplicates from the same faucet).
-    /// - `rng` draws two independent serial numbers — one for the inbound
+    /// - `rng` draws two independent serial numbers - one for the inbound
     ///   P2IDF note and one for the outbound P2ID-to-Bob note. Both are
     ///   committed to by hashes, so an observer cannot link Alice to Bob via
     ///   the serials alone.

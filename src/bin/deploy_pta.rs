@@ -3,7 +3,7 @@
 //! In Miden a regular account is "deployed" by submitting any transaction
 //! whose sender is the new account (the seed embedded in the account is
 //! consumed to construct its commitment in the chain). For the PTA the
-//! natural first transaction is the one that consumes a P2IDF note — that's
+//! natural first transaction is the one that consumes a P2IDF note - that's
 //! the entire reason the PTA exists. So `deploy_pta` runs the full
 //! Alice → PTA → Bob single-hop forward against a freshly built PTA.
 //!
@@ -13,7 +13,7 @@
 //! cargo run --release --features cli --bin deploy_pta
 //! ```
 //!
-//! The PTA's bech32 address is printed at the end — copy that into the README
+//! The PTA's bech32 address is printed at the end - copy that into the README
 //! (and pass it to `use_pta`) so subsequent runs reuse the same on-chain PTA.
 
 use std::path::PathBuf;
