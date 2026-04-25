@@ -59,7 +59,8 @@ impl P2idForwardNote {
         P2IDF_SCRIPT.root()
     }
 
-    /// Builds a P2IDF note.
+    /// Builds a P2IDF note **and** the matching outbound P2ID note that the
+    /// PTA's note script will produce when it consumes the P2IDF.
     ///
     /// - `alice` is the sender of the P2IDF note (recorded in its metadata).
     /// - `pta` is the pass-through account that will consume this note.
@@ -67,10 +68,16 @@ impl P2idForwardNote {
     /// - `assets` are the assets being forwarded. Must be non-empty and
     ///   satisfy `NoteAssets`'s constraints (at most `MAX_ASSETS_PER_NOTE`,
     ///   no duplicates from the same faucet).
-    /// - `rng` draws two independent serial numbers - one for the inbound
+    /// - `rng` draws two independent serial numbers: one for the inbound
     ///   P2IDF note and one for the outbound P2ID-to-Bob note. Both are
     ///   committed to by hashes, so an observer cannot link Alice to Bob via
     ///   the serials alone.
+    ///
+    /// Returns both notes as a [`P2idForwardPair`]:
+    /// - `inbound` is the P2IDF Alice broadcasts; the PTA consumes it.
+    /// - `outbound` is bit-identical to the P2ID note the PTA's note script
+    ///   will produce on-chain. Hand it to Bob (out of band; the note is
+    ///   private) so he can prove and consume it without re-deriving it.
     pub fn create<R: FeltRng>(
         alice: AccountId,
         pta: AccountId,
@@ -78,7 +85,7 @@ impl P2idForwardNote {
         assets: Vec<Asset>,
         attachment: NoteAttachment,
         rng: &mut R,
-    ) -> Result<Note, NoteError> {
+    ) -> Result<P2idForwardPair, NoteError> {
         let inbound_serial = rng.draw_word();
         let outbound_serial = rng.draw_word();
         let outbound_note_type = NoteType::Private;
@@ -99,13 +106,51 @@ impl P2idForwardNote {
 
         // The inbound note is always private in v1; tag it at the PTA's
         // account bucket so a PTA operator can discover it.
-        let metadata = NoteMetadata::new(alice, NoteType::Private)
+        let inbound_metadata = NoteMetadata::new(alice, NoteType::Private)
             .with_tag(NoteTag::with_account_target(pta))
             .with_attachment(attachment);
-        let vault = NoteAssets::new(assets)?;
+        let inbound_vault = NoteAssets::new(assets.clone())?;
+        let inbound = Note::new(inbound_vault, inbound_metadata, recipient);
 
-        Ok(Note::new(vault, metadata, recipient))
+        // Reconstruct the outbound P2ID note exactly as the PTA's note script
+        // will create it (see `masm/standards/notes/p2id_forward.masm`):
+        //   - sender = active account during the PTA's tx, i.e. the PTA;
+        //   - type / tag = the values stored in P2IDF storage;
+        //   - attachment = default (the kernel's `output_note::create` sets
+        //     attachment kind = None / value = empty word);
+        //   - recipient = the precomputed P2ID-to-Bob recipient;
+        //   - assets = the inbound assets, but in REVERSE order. The masm
+        //     loop iterates `i` from `num_assets` down to 1 and feeds
+        //     `wallet::move_asset_to_note` each iteration, so the outbound
+        //     note's vault ends up holding `[assets[N-1], assets[N-2], ...,
+        //     assets[0]]`. NoteAssets ordering matters for the assets
+        //     commitment, so the reversal is required for the resulting
+        //     note id to match the executor's on-chain id.
+        // With every component matching, this Note's id equals the id of the
+        // note the executor produces on-chain, so it can be passed straight
+        // to Bob's consume request.
+        let outbound_metadata = NoteMetadata::new(pta, outbound_note_type).with_tag(outbound_tag);
+        let outbound_assets: Vec<Asset> = assets.into_iter().rev().collect();
+        let outbound_vault = NoteAssets::new(outbound_assets)?;
+        let outbound = Note::new(outbound_vault, outbound_metadata, outbound_recipient);
+
+        Ok(P2idForwardPair { inbound, outbound })
     }
+}
+
+// P2IDF FORWARD PAIR
+// ================================================================================================
+
+/// The two notes produced by [`P2idForwardNote::create`]: the inbound P2IDF
+/// (Alice -> PTA) and the outbound P2ID (PTA -> Bob) it will fan out into.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct P2idForwardPair {
+    /// The P2IDF note Alice publishes; the PTA consumes it.
+    pub inbound: Note,
+    /// The P2ID note the PTA's note script emits on-chain when it consumes
+    /// `inbound`. Bit-identical to the executor's output; hand it to Bob so
+    /// he can consume directly without round-tripping through the chain.
+    pub outbound: Note,
 }
 
 // P2IDF NOTE STORAGE

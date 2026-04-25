@@ -89,14 +89,29 @@ async fn main() -> Result<()> {
     println!("\nforwarding through PTA");
     let asset =
         FungibleAsset::new(faucet.id(), ASSET_AMOUNT).context("constructing asset for forward")?;
-    let (alice_tx, pta_tx) =
+    let (alice_tx, pta_tx, bob_tx) =
         forward_through_pta(&mut client, &alice, &pta, &bob, vec![asset.into()]).await?;
+
+    // Confirm Bob actually owns the asset on-chain after his redeem.
+    client.sync_state().await.context("post-flow sync")?;
+    let bob_account = client
+        .try_get_account(bob.id())
+        .await
+        .context("re-reading Bob from store")?;
+    let bob_balance = bob_account.vault().get_balance(faucet.id()).unwrap_or(0);
+    if bob_balance != ASSET_AMOUNT {
+        return Err(anyhow!(
+            "expected bob's vault to hold {ASSET_AMOUNT}, found {bob_balance}"
+        ));
+    }
 
     println!("\n✅ forwarded through public PTA.");
     println!("  PTA bech32:    {}", pta_bech32);
     println!("  PTA midenscan: {}", midenscan_account_url(pta.id()));
     println!("  alice tx:      {}", midenscan_tx_url(alice_tx));
     println!("  PTA tx:        {}", midenscan_tx_url(pta_tx));
+    println!("  bob redeem tx: {}", midenscan_tx_url(bob_tx));
+    println!("  bob vault:     {} of {}", bob_balance, faucet.id());
 
     Ok(())
 }

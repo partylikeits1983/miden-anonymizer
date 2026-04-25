@@ -155,19 +155,26 @@ async fn any_client_can_use_public_pta() -> anyhow::Result<()> {
     mint_and_consume(&mut client, &faucet, &alice, amount).await?;
 
     let asset = FungibleAsset::new(faucet.id(), amount).context("FungibleAsset::new")?;
-    let (alice_tx, pta_tx) =
+    let (alice_tx, pta_tx, bob_tx) =
         forward_through_pta(&mut client, &alice, &pta, &bob, vec![asset.into()]).await?;
 
-    println!("alice tx: {}", midenscan_tx_url(alice_tx));
-    println!("PTA tx:   {}", midenscan_tx_url(pta_tx));
+    println!("alice tx:      {}", midenscan_tx_url(alice_tx));
+    println!("PTA tx:        {}", midenscan_tx_url(pta_tx));
+    println!("bob redeem tx: {}", midenscan_tx_url(bob_tx));
 
-    // The PTA tx committing on-chain *is* the property under test: a fresh
-    // client, with no shared state, was able to drive a transaction against
-    // the public PTA. `forward_through_pta` already waited for the PTA tx
-    // to commit, so reaching this point with `Ok(_)` is the assertion.
-    //
-    // We deliberately don't probe Bob's inbox here - the outbound note is
-    // private and propagating it to a separate client is out of scope for
-    // this test (and unrelated to the "any client" property).
+    // End-to-end assertion: after Bob's redeem commits, his vault should hold
+    // the forwarded asset. This proves the full Alice -> PTA -> Bob hop
+    // works against a public PTA driven by an otherwise-blank client.
+    client.sync_state().await.context("post-flow sync")?;
+    let bob_account = client
+        .try_get_account(bob.id())
+        .await
+        .context("re-reading Bob from store")?;
+    let bob_balance = bob_account.vault().get_balance(faucet.id()).unwrap_or(0);
+    assert_eq!(
+        bob_balance, amount,
+        "bob's vault should hold the forwarded amount after the redeem tx commits"
+    );
+
     Ok(())
 }

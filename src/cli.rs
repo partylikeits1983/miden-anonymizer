@@ -235,20 +235,25 @@ pub async fn mint_and_consume(
     Ok(())
 }
 
-/// Drives a single P2IDF hop: Alice emits a P2IDF note targeted at `pta` that
-/// forwards `assets` to `bob`, then `pta` consumes it. Returns
-/// `(alice_tx_id, pta_tx_id)`.
+/// Drives the full P2IDF hop end-to-end:
 ///
-/// Both `alice` and `pta` must already be tracked by the client; `alice` must
-/// hold the asset(s) being forwarded.
+/// 1. Alice's tx emits the P2IDF note (and waits for it to commit).
+/// 2. The PTA's tx consumes the P2IDF and emits the outbound P2ID to Bob.
+/// 3. Bob's tx redeems the outbound P2ID into his vault.
+///
+/// Returns the three transaction IDs in flow order. All three accounts must
+/// already be tracked by the client; Alice must hold the asset(s) being
+/// forwarded. The outbound P2ID note is private, so it's passed to Bob's
+/// consume request explicitly via the precomputed
+/// [`P2idForwardPair::outbound`] - no chain round-trip needed.
 pub async fn forward_through_pta(
     client: &mut PtaClient,
     alice: &Account,
     pta: &Account,
     bob: &Account,
     assets: Vec<Asset>,
-) -> Result<(TransactionId, TransactionId)> {
-    let p2idf = P2idForwardNote::create(
+) -> Result<(TransactionId, TransactionId, TransactionId)> {
+    let pair = P2idForwardNote::create(
         alice.id(),
         pta.id(),
         bob.id(),
@@ -261,7 +266,7 @@ pub async fn forward_through_pta(
     // Alice's tx: emit the P2IDF note as an own_output_note. The basic-wallet
     // template script will pull the asset out of Alice's vault into the note.
     let alice_request = TransactionRequestBuilder::new()
-        .own_output_notes(vec![p2idf.clone()])
+        .own_output_notes(vec![pair.inbound.clone()])
         .build()
         .context("building Alice's P2IDF send request")?;
     let alice_tx = client
@@ -275,7 +280,7 @@ pub async fn forward_through_pta(
     // can unauthenticated-consume it even when the chain only has the
     // nullifier (the note is private).
     let pta_request = TransactionRequestBuilder::new()
-        .input_notes([(p2idf, None)])
+        .input_notes([(pair.inbound, None)])
         .build()
         .context("building PTA consume request")?;
     let pta_tx = client
@@ -285,7 +290,21 @@ pub async fn forward_through_pta(
     println!("  PTA forward tx: {}", midenscan_tx_url(pta_tx));
     wait_for_tx(client, pta_tx).await?;
 
-    Ok((alice_tx, pta_tx))
+    // Bob's tx: redeem the outbound P2ID. The note is private, so we hand
+    // Bob the precomputed `pair.outbound` (bit-identical to what the PTA's
+    // note script just emitted on-chain) and let him consume it.
+    let bob_request = TransactionRequestBuilder::new()
+        .input_notes([(pair.outbound, None)])
+        .build()
+        .context("building Bob's P2ID redeem request")?;
+    let bob_tx = client
+        .submit_new_transaction(bob.id(), bob_request)
+        .await
+        .context("submitting Bob's P2ID redeem tx")?;
+    println!("  bob redeem tx:  {}", midenscan_tx_url(bob_tx));
+    wait_for_tx(client, bob_tx).await?;
+
+    Ok((alice_tx, pta_tx, bob_tx))
 }
 
 /// Builds (but does not submit) a fresh PTA. The returned account carries its

@@ -3,6 +3,9 @@
 //! Asserts:
 //!   - After the PTA consumes the P2IDF note, its vault is empty.
 //!   - The emitted outbound note's sender is the PTA, not Alice.
+//!   - The precomputed `P2idForwardPair.outbound` matches the executor's
+//!     output note bit-for-bit, and Bob can consume that note to take
+//!     possession of the forwarded asset.
 
 use anyhow::Result;
 use miden_anonymizer::account::PassThroughAccount;
@@ -38,7 +41,7 @@ async fn alice_sends_to_bob_via_pta() -> Result<()> {
     // Alice builds a P2IDF note forwarding the asset through the PTA to Bob.
     // Seed the RNG deterministically so test output is reproducible.
     let mut rng = RandomCoin::new(Word::default());
-    let p2idf = P2idForwardNote::create(
+    let pair = P2idForwardNote::create(
         alice.id(),
         pta_account.id(),
         bob.id(),
@@ -46,6 +49,8 @@ async fn alice_sends_to_bob_via_pta() -> Result<()> {
         NoteAttachment::default(),
         &mut rng,
     )?;
+    let p2idf = pair.inbound;
+    let outbound_p2id = pair.outbound;
 
     // Add the P2IDF note as a genesis-committed note so the PTA can consume
     // it as an authenticated input.
@@ -102,6 +107,38 @@ async fn alice_sends_to_bob_via_pta() -> Result<()> {
         "outbound note sender must be the PTA, not Alice"
     );
 
+    // The outbound note returned by the executor must be bit-identical to the
+    // outbound P2ID we precomputed alongside the P2IDF. That equality is what
+    // lets Bob consume it directly without re-deriving anything from chain.
+    assert_eq!(
+        outbound.id(),
+        outbound_p2id.id(),
+        "executor's outbound P2ID note id must match the precomputed pair.outbound"
+    );
+
+    // Bob redeems the outbound P2ID. This is the leg that completes the hop;
+    // without it the asset would remain stranded in the outbound note.
+    // The outbound P2ID note is private, so the MockChain only retains its
+    // header and can't synthesize an authenticated input. Pass the full
+    // precomputed note via the unauthenticated_notes slot.
+    let bob_redeem = chain
+        .build_tx_context(bob.id(), &[], &[outbound_p2id.clone()])?
+        .build()?
+        .execute()
+        .await?;
+    chain.add_pending_executed_transaction(&bob_redeem)?;
+    chain.prove_next_block()?;
+
+    let bob_state = chain.committed_account(bob.id())?;
+    assert_eq!(
+        bob_state
+            .vault()
+            .get_balance(faucet.id())
+            .expect("bob should hold the forwarded asset"),
+        ASSET_AMOUNT,
+        "bob's vault must hold the forwarded amount after redeeming"
+    );
+
     Ok(())
 }
 
@@ -124,7 +161,7 @@ async fn alice_sends_multiple_assets_to_bob_via_pta() -> Result<()> {
     let alice = builder.add_existing_wallet_with_assets(Auth::IncrNonce, [asset_a, asset_b])?;
 
     let mut rng = RandomCoin::new(Word::default());
-    let p2idf = P2idForwardNote::create(
+    let pair = P2idForwardNote::create(
         alice.id(),
         pta_account.id(),
         bob.id(),
@@ -132,6 +169,8 @@ async fn alice_sends_multiple_assets_to_bob_via_pta() -> Result<()> {
         NoteAttachment::default(),
         &mut rng,
     )?;
+    let p2idf = pair.inbound;
+    let outbound_p2id = pair.outbound;
 
     builder.add_output_note(RawOutputNote::Full(p2idf.clone()));
 
@@ -168,6 +207,43 @@ async fn alice_sends_multiple_assets_to_bob_via_pta() -> Result<()> {
         outbound.assets().num_assets(),
         2,
         "outbound note must carry both forwarded assets"
+    );
+    assert_eq!(
+        outbound.id(),
+        outbound_p2id.id(),
+        "executor's outbound P2ID note id must match the precomputed pair.outbound \
+         even with multiple assets"
+    );
+
+    // Bob redeems the multi-asset outbound P2ID and ends up with both assets
+    // in his vault.
+    // The outbound P2ID note is private, so the MockChain only retains its
+    // header and can't synthesize an authenticated input. Pass the full
+    // precomputed note via the unauthenticated_notes slot.
+    let bob_redeem = chain
+        .build_tx_context(bob.id(), &[], &[outbound_p2id.clone()])?
+        .build()?
+        .execute()
+        .await?;
+    chain.add_pending_executed_transaction(&bob_redeem)?;
+    chain.prove_next_block()?;
+
+    let bob_state = chain.committed_account(bob.id())?;
+    assert_eq!(
+        bob_state
+            .vault()
+            .get_balance(faucet_a.id())
+            .expect("bob should hold faucet_a's asset"),
+        ASSET_AMOUNT,
+        "bob's vault must hold faucet_a's amount after redeeming"
+    );
+    assert_eq!(
+        bob_state
+            .vault()
+            .get_balance(faucet_b.id())
+            .expect("bob should hold faucet_b's asset"),
+        ASSET_AMOUNT * 2,
+        "bob's vault must hold faucet_b's amount after redeeming"
     );
 
     Ok(())
